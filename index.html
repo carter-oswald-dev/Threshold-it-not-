@@ -1,0 +1,812 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Threshold It Not — AI-ranked dithering for toner printers</title>
+<meta name="description" content="Upload a photo. An AI model trained on thousands of dithering comparisons picks the best halftone conversion for low-quality toner printers — or browse every option yourself." />
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Expanded:wght@600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+<style>
+  :root {
+    --paper: #f2f0ea;
+    --paper-punch: #fbfaf6;
+    --ink: #141414;
+    --ink-soft: #2b2b2b;
+    --starved: #8a8578;
+    --starved-line: #d8d4c8;
+    --registration: #c6402a;
+    --registration-dim: #c6402a33;
+    --ok-green: #3f6b3f;
+
+    --font-display: 'Archivo Expanded', sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+    --gap: 24px;
+    --radius: 2px;
+  }
+
+  * { box-sizing: border-box; }
+
+  html { -webkit-text-size-adjust: 100%; }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-mono);
+    font-size: 14px;
+    line-height: 1.5;
+    background-image:
+      radial-gradient(var(--starved-line) 0.6px, transparent 0.6px);
+    background-size: 4px 4px;
+  }
+
+  /* ---------- registration marks (page frame) ---------- */
+  .press-frame {
+    position: relative;
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 28px 28px 80px;
+  }
+  .reg-mark {
+    position: fixed;
+    width: 22px;
+    height: 22px;
+    pointer-events: none;
+    z-index: 40;
+    opacity: 0.55;
+  }
+  .reg-mark::before, .reg-mark::after {
+    content: '';
+    position: absolute;
+    background: var(--registration);
+  }
+  .reg-mark::before { width: 100%; height: 1px; top: 50%; left: 0; }
+  .reg-mark::after { width: 1px; height: 100%; left: 50%; top: 0; }
+  .reg-tl { top: 14px; left: 14px; }
+  .reg-tr { top: 14px; right: 14px; }
+  .reg-bl { bottom: 14px; left: 14px; }
+  .reg-br { bottom: 14px; right: 14px; }
+
+  /* ---------- header ---------- */
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: var(--gap);
+    padding: 20px 0 18px;
+    border-bottom: 2px solid var(--ink);
+    margin-bottom: var(--gap);
+    flex-wrap: wrap;
+  }
+  .wordmark {
+    font-family: var(--font-display);
+    font-weight: 800;
+    font-size: clamp(28px, 5vw, 44px);
+    letter-spacing: -0.01em;
+    line-height: 0.95;
+    text-transform: uppercase;
+  }
+  .wordmark .not {
+    color: var(--registration);
+    text-decoration: line-through;
+    text-decoration-thickness: 3px;
+    text-decoration-color: var(--registration);
+  }
+  .tagline {
+    font-size: 12px;
+    color: var(--starved);
+    max-width: 320px;
+    text-align: right;
+  }
+  .press-check {
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--starved);
+    margin-top: 4px;
+  }
+
+  /* ---------- hero / spec strip ---------- */
+  .spec-strip {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1px;
+    background: var(--ink);
+    margin-bottom: var(--gap);
+    font-size: 11px;
+  }
+  .spec-cell {
+    background: var(--paper);
+    padding: 10px 12px;
+  }
+  .spec-cell .k {
+    color: var(--starved);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-size: 10px;
+  }
+  .spec-cell .v {
+    font-weight: 600;
+    margin-top: 2px;
+  }
+  @media (max-width: 720px) {
+    .spec-strip { grid-template-columns: repeat(2, 1fr); }
+  }
+
+  /* ---------- lede ---------- */
+  .lede {
+    display: grid;
+    grid-template-columns: 1.1fr 0.9fr;
+    gap: 40px;
+    margin-bottom: 32px;
+    align-items: center;
+  }
+  .lede--reverse {
+    grid-template-columns: 0.9fr 1.1fr;
+    margin-bottom: 48px;
+  }
+  @media (max-width: 860px) {
+    .lede, .lede--reverse { grid-template-columns: 1fr; }
+    .lede--reverse .halftone-demo { order: -1; }
+  }
+  .lede h1 {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: clamp(19px, 2.4vw, 24px);
+    line-height: 1.35;
+    text-transform: uppercase;
+    letter-spacing: 0.005em;
+    margin: 0 0 14px;
+  }
+  .lede p {
+    color: var(--ink-soft);
+    font-size: 13.5px;
+    line-height: 1.7;
+    margin: 0 0 14px;
+  }
+  .lede strong { color: var(--registration); font-weight: 600; }
+
+  /* before/after demo photos */
+  .halftone-demo {
+    position: relative;
+    border: 1px solid var(--ink);
+    background: var(--paper-punch);
+    aspect-ratio: 4 / 3;
+    overflow: hidden;
+  }
+  .halftone-demo canvas,
+  .halftone-demo img {
+    width: 100%;
+    height: 100%;
+    display: block;
+    object-fit: cover;
+    image-rendering: pixelated;
+  }
+  .halftone-demo--after img { image-rendering: pixelated; }
+  .halftone-demo .demo-label {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    background: var(--ink);
+    color: var(--paper);
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    padding: 5px 8px;
+    display: flex;
+    justify-content: space-between;
+  }
+  .halftone-demo .demo-label span:last-child { color: var(--registration); }
+
+  /* ---------- section headers ---------- */
+  .section-head {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    margin: 44px 0 16px;
+  }
+  .section-num {
+    font-family: var(--font-display);
+    font-weight: 800;
+    font-size: 13px;
+    color: var(--registration);
+  }
+  .section-title {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 15px;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+  }
+  .section-rule {
+    flex: 1;
+    height: 1px;
+    background: var(--starved-line);
+  }
+
+  /* ---------- upload dropzone (the "press bed") ---------- */
+  .press-bed {
+    border: 2px dashed var(--ink);
+    background: var(--paper-punch);
+    padding: 48px 24px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color .15s ease, background .15s ease;
+    position: relative;
+  }
+  .press-bed:hover, .press-bed.drag-over {
+    border-color: var(--registration);
+    background: #fffdf9;
+  }
+  .press-bed input[type="file"] { display: none; }
+  .press-bed .press-bed-icon {
+    font-size: 34px;
+    margin-bottom: 10px;
+    filter: grayscale(1);
+  }
+  .press-bed .press-bed-main {
+    font-family: var(--font-display);
+    font-weight: 700;
+    text-transform: uppercase;
+    font-size: 14px;
+    letter-spacing: 0.02em;
+  }
+  .press-bed .press-bed-sub {
+    color: var(--starved);
+    font-size: 11.5px;
+    margin-top: 6px;
+  }
+
+  .source-preview {
+    display: none;
+    align-items: center;
+    gap: 16px;
+    border: 1px solid var(--ink);
+    background: var(--paper-punch);
+    padding: 12px;
+    margin-top: 12px;
+  }
+  .source-preview.visible { display: flex; }
+  .source-preview img {
+    width: 72px; height: 72px;
+    object-fit: cover;
+    border: 1px solid var(--starved-line);
+    image-rendering: pixelated;
+  }
+  .source-preview .meta { font-size: 11.5px; flex: 1; }
+  .source-preview .meta .fn { font-weight: 600; word-break: break-all; }
+  .source-preview .meta .dims { color: var(--starved); margin-top: 2px; }
+  .btn-clear {
+    background: none;
+    border: 1px solid var(--ink);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    padding: 6px 10px;
+    cursor: pointer;
+    color: var(--ink);
+  }
+  .btn-clear:hover { background: var(--ink); color: var(--paper); }
+
+  /* ---------- controls ---------- */
+  .controls {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin-top: 20px;
+  }
+  @media (max-width: 720px) {
+    .controls { grid-template-columns: 1fr; }
+  }
+  .control label {
+    display: block;
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--starved);
+    margin-bottom: 6px;
+  }
+  .control select {
+    width: 100%;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    padding: 9px 10px;
+    background: var(--paper-punch);
+    border: 1px solid var(--ink);
+    border-radius: 0;
+    color: var(--ink);
+  }
+
+  .run-row {
+    margin-top: 22px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .btn-run {
+    font-family: var(--font-display);
+    font-weight: 800;
+    text-transform: uppercase;
+    font-size: 13px;
+    letter-spacing: 0.03em;
+    background: var(--ink);
+    color: var(--paper);
+    border: none;
+    padding: 14px 26px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .btn-run:hover:not(:disabled) { background: var(--registration); }
+  .btn-run:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn-run .swatch {
+    width: 10px; height: 10px;
+    background: var(--registration);
+    display: inline-block;
+  }
+
+  .model-status {
+    font-size: 11px;
+    color: var(--starved);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .model-status .dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--starved);
+  }
+  .model-status.ready .dot { background: var(--ok-green); }
+  .model-status.missing .dot { background: var(--registration); }
+
+  /* ---------- progress ---------- */
+  .progress-wrap {
+    display: none;
+    margin-top: 18px;
+  }
+  .progress-wrap.visible { display: block; }
+  .progress-track {
+    height: 6px;
+    background: var(--starved-line);
+    width: 100%;
+    position: relative;
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    background: var(--registration);
+    width: 0%;
+    transition: width .1s linear;
+  }
+  .progress-label {
+    font-size: 11px;
+    color: var(--starved);
+    margin-top: 6px;
+    display: flex;
+    justify-content: space-between;
+  }
+
+  /* ---------- results ---------- */
+  .results { display: none; margin-top: 8px; }
+  .results.visible { display: block; }
+
+  .tab-row {
+    display: flex;
+    border-bottom: 2px solid var(--ink);
+    margin-bottom: 20px;
+    gap: 0;
+  }
+  .tab-btn {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    background: none;
+    border: none;
+    padding: 10px 16px;
+    cursor: pointer;
+    color: var(--starved);
+    border-bottom: 3px solid transparent;
+    margin-bottom: -2px;
+  }
+  .tab-btn.active {
+    color: var(--ink);
+    font-weight: 600;
+    border-bottom-color: var(--registration);
+  }
+
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  /* best pick */
+  .best-pick {
+    display: grid;
+    grid-template-columns: 1.3fr 1fr;
+    gap: 28px;
+  }
+  @media (max-width: 860px) {
+    .best-pick { grid-template-columns: 1fr; }
+  }
+  .best-pick-img {
+    border: 1px solid var(--ink);
+    background: var(--paper-punch);
+    position: relative;
+  }
+  .best-pick-img img { width: 100%; display: block; image-rendering: pixelated; }
+  .best-pick-img .tag {
+    position: absolute;
+    top: 0; left: 0;
+    background: var(--registration);
+    color: var(--paper);
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 4px 8px;
+  }
+  .best-pick-info .label {
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--starved);
+  }
+  .best-pick-info .algo-name {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 20px;
+    text-transform: uppercase;
+    margin: 4px 0 16px;
+  }
+  .best-pick-info dl {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 6px 14px;
+    font-size: 12px;
+    margin: 0 0 22px;
+  }
+  .best-pick-info dt { color: var(--starved); }
+  .best-pick-info dd { margin: 0; font-weight: 500; }
+
+  .btn-primary {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--ink);
+    color: var(--paper);
+    border: none;
+    font-family: var(--font-display);
+    font-weight: 700;
+    text-transform: uppercase;
+    font-size: 12px;
+    letter-spacing: 0.03em;
+    padding: 12px 20px;
+    cursor: pointer;
+    text-decoration: none;
+  }
+  .btn-primary:hover { background: var(--registration); }
+  .btn-secondary {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: none;
+    color: var(--ink);
+    border: 1px solid var(--ink);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    padding: 11px 18px;
+    cursor: pointer;
+    text-decoration: none;
+    margin-left: 10px;
+  }
+  .btn-secondary:hover { border-color: var(--registration); color: var(--registration); }
+
+  /* manual browse grid */
+  .rank-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 14px;
+  }
+  .rank-card {
+    border: 1px solid var(--ink);
+    background: var(--paper-punch);
+  }
+  .rank-card .rank-img {
+    aspect-ratio: 1;
+    overflow: hidden;
+    border-bottom: 1px solid var(--starved-line);
+    background: repeating-conic-gradient(var(--starved-line) 0% 25%, transparent 0% 50%) 50% / 12px 12px;
+  }
+  .rank-card .rank-img img { width: 100%; height: 100%; object-fit: contain; image-rendering: pixelated; }
+  .rank-card .rank-meta {
+    padding: 8px 10px 10px;
+    font-size: 10.5px;
+  }
+  .rank-card .rank-order {
+    color: var(--registration);
+    font-weight: 700;
+    font-family: var(--font-display);
+    font-size: 13px;
+  }
+  .rank-card .rank-label {
+    margin: 3px 0 8px;
+    line-height: 1.35;
+    word-break: break-word;
+  }
+  .rank-card .rank-dl {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 10.5px;
+    color: var(--ink);
+    text-decoration: none;
+    border: 1px solid var(--ink);
+    padding: 5px 9px;
+  }
+  .rank-card .rank-dl:hover { background: var(--ink); color: var(--paper); }
+  .rank-card.is-top { border-color: var(--registration); border-width: 2px; }
+
+  /* download all */
+  .dl-all-panel {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 24px;
+    align-items: center;
+    border: 1px solid var(--ink);
+    background: var(--paper-punch);
+    padding: 28px;
+  }
+  @media (max-width: 640px) {
+    .dl-all-panel { grid-template-columns: 1fr; text-align: center; }
+  }
+  .dl-all-panel h3 {
+    font-family: var(--font-display);
+    text-transform: uppercase;
+    font-size: 15px;
+    margin: 0 0 8px;
+  }
+  .dl-all-panel p {
+    font-size: 12.5px;
+    color: var(--starved);
+    margin: 0;
+    max-width: 46ch;
+    line-height: 1.6;
+  }
+
+  /* ---------- footer ---------- */
+  footer {
+    margin-top: 64px;
+    padding-top: 20px;
+    border-top: 2px solid var(--ink);
+    font-size: 11px;
+    color: var(--starved);
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  footer a { color: var(--ink); }
+
+  .visually-hidden {
+    position: absolute;
+    width: 1px; height: 1px;
+    overflow: hidden;
+    clip: rect(0,0,0,0);
+    white-space: nowrap;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--registration);
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+  }
+
+  .error-banner {
+    display: none;
+    border: 1px solid var(--registration);
+    background: #fdeceb;
+    color: var(--registration);
+    padding: 12px 14px;
+    font-size: 12px;
+    margin-top: 16px;
+  }
+  .error-banner.visible { display: block; }
+</style>
+</head>
+<body>
+
+<div class="reg-mark reg-tl" aria-hidden="true"></div>
+<div class="reg-mark reg-tr" aria-hidden="true"></div>
+<div class="reg-mark reg-bl" aria-hidden="true"></div>
+<div class="reg-mark reg-br" aria-hidden="true"></div>
+
+<div class="press-frame">
+
+  <header>
+    <div>
+      <div class="wordmark">Threshold<br>It<span class="not"> Not</span></div>
+      <div class="press-check">Press check — batch 04 — AI-ranked dither</div>
+    </div>
+    <div class="tagline">
+      Every cheap toner printer flattens photos into mush. This picks the halftone pattern that survives the print.
+    </div>
+  </header>
+
+  <div class="spec-strip">
+    <div class="spec-cell"><div class="k">Candidates scored</div><div class="v" id="specCandidates">23 per image</div></div>
+    <div class="spec-cell"><div class="k">Algorithms</div><div class="v">11 error-diffusion + Bayer</div></div>
+    <div class="spec-cell"><div class="k">Model</div><div class="v" id="specModelState">not loaded</div></div>
+    <div class="spec-cell"><div class="k">Processing</div><div class="v">100% in your browser</div></div>
+  </div>
+
+  <section class="lede">
+    <div>
+      <h1>Need to print something but you're stuck with a basic black &amp; white copy machine?</h1>
+      <p>Where you want to show someone this —</p>
+    </div>
+    <div class="halftone-demo halftone-demo--before">
+      <img src="./sample/before.jpg" alt="Original color photo of a solar eclipse over an orange sunset sky" />
+      <div class="demo-label"><span>What you're printing</span><span>original</span></div>
+    </div>
+  </section>
+
+  <section class="lede lede--reverse">
+    <div class="halftone-demo halftone-demo--after">
+      <img src="./sample/after.png" alt="The same photo reduced to plain black and white threshold, losing almost all detail" />
+      <div class="demo-label"><span>Plain threshold, no dithering</span><span>what you get</span></div>
+    </div>
+    <div>
+      <p>But your best printed copy looks more like this —</p>
+      <p>Toner printers don't do gradients. Left to a plain black-and-white threshold, most photos collapse into blobs like the one shown here.</p>
+      <p>So instead we use dithering, which tricks your eyes into seeing gray scale while only using black and white.</p>
+      <p>But different images work better with different types of dithering. Using just the common types, you'd have to manually check up to 23 versions to see which one looks best.</p>
+      <p>Instead of wasting time doing that by hand, this site can decide for you — using a simple custom-trained neural network, similar to the kind post offices use to read handwritten addresses and sort packages.</p>
+      <p>The model looks at your submitted image and runs entirely in your browser, so there's no privacy concern — nothing is uploaded anywhere.</p>
+      <p>It then ranks every dithering option from best to worst for your image.</p>
+      <p>You can download the top pick, browse and choose one yourself, or bulk-download everything to sort through by eye on your own device.</p>
+      <p>If you want to see it in action, try the solar eclipse photo from the top of the page as a demo.</p>
+      <button class="btn-secondary" id="tryExampleBtn" type="button" style="margin-left:0;">Try this example photo ↓</button>
+    </div>
+  </section>
+
+  <!-- 01 UPLOAD -->
+  <div class="section-head">
+    <span class="section-num">01</span>
+    <span class="section-title">Load a photo</span>
+    <span class="section-rule"></span>
+  </div>
+
+  <label class="press-bed" id="pressBed" for="fileInput">
+    <div class="press-bed-icon">⛶</div>
+    <div class="press-bed-main">Drop a PNG or JPG, or tap to choose</div>
+    <div class="press-bed-sub">Processed locally. Nothing leaves your device.</div>
+    <input type="file" id="fileInput" accept="image/png, image/jpeg" />
+  </label>
+
+  <div class="source-preview" id="sourcePreview">
+    <img id="sourceThumb" alt="" />
+    <div class="meta">
+      <div class="fn" id="sourceFilename"></div>
+      <div class="dims" id="sourceDims"></div>
+    </div>
+    <button class="btn-clear" id="btnClear" type="button">Clear</button>
+  </div>
+
+  <!-- 02 SETTINGS -->
+  <div class="section-head">
+    <span class="section-num">02</span>
+    <span class="section-title">Settings</span>
+    <span class="section-rule"></span>
+  </div>
+
+  <div class="controls">
+    <div class="control">
+      <label for="paletteSelect">Palette</label>
+      <select id="paletteSelect"></select>
+    </div>
+    <div class="control">
+      <label for="modeSelect">Dithering mode</label>
+      <select id="modeSelect">
+        <option value="both" selected>Error diffusion + Bayer</option>
+        <option value="error">Error diffusion only</option>
+        <option value="bayer">Bayer (ordered) only</option>
+      </select>
+    </div>
+    <div class="control">
+      <label for="serpentineSelect">Serpentine scanning</label>
+      <select id="serpentineSelect">
+        <option value="both" selected>Try both</option>
+        <option value="true">On only</option>
+        <option value="false">Off only</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="run-row">
+    <button class="btn-run" id="btnRun" disabled type="button">
+      <span class="swatch" aria-hidden="true"></span>
+      Run AI dither ranking
+    </button>
+    <div class="model-status" id="modelStatus">
+      <span class="dot"></span>
+      <span id="modelStatusText">Loading model…</span>
+    </div>
+  </div>
+
+  <div class="error-banner" id="errorBanner"></div>
+
+  <div class="progress-wrap" id="progressWrap">
+    <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+    <div class="progress-label"><span id="progressText">Rendering variants…</span><span id="progressCount">0 / 0</span></div>
+  </div>
+
+  <!-- 03 RESULTS -->
+  <div class="results" id="results">
+    <div class="section-head">
+      <span class="section-num">03</span>
+      <span class="section-title">Results</span>
+      <span class="section-rule"></span>
+    </div>
+
+    <div class="tab-row">
+      <button class="tab-btn active" data-tab="best" type="button">Best pick</button>
+      <button class="tab-btn" data-tab="browse" type="button">Browse all</button>
+      <button class="tab-btn" data-tab="all" type="button">Download all</button>
+    </div>
+
+    <div class="tab-panel active" id="tab-best">
+      <div class="best-pick">
+        <div class="best-pick-img">
+          <span class="tag">AI pick</span>
+          <img id="bestImg" alt="Best-ranked dithered result" />
+        </div>
+        <div class="best-pick-info">
+          <div class="label">Highest-scored candidate</div>
+          <div class="algo-name" id="bestAlgoName">—</div>
+          <dl>
+            <dt>Mode</dt><dd id="bestMode">—</dd>
+            <dt>Serpentine</dt><dd id="bestSerp">—</dd>
+            <dt>Palette</dt><dd id="bestPalette">—</dd>
+            <dt>Model score</dt><dd id="bestScore">—</dd>
+            <dt>Ranked</dt><dd id="bestRank">—</dd>
+          </dl>
+          <a class="btn-primary" id="bestDownload" download>Download this PNG</a>
+          <button class="btn-secondary" data-goto-tab="browse" type="button">Compare others</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-panel" id="tab-browse">
+      <div class="rank-grid" id="rankGrid"></div>
+    </div>
+
+    <div class="tab-panel" id="tab-all">
+      <div class="dl-all-panel">
+        <div>
+          <h3>Every combination, one ZIP</h3>
+          <p>All <span id="allCount">—</span> ranked candidates as individual PNGs, numbered by rank, plus a <code>rankings.json</code> with each candidate's algorithm, settings, and score — for comparing print output by hand.</p>
+        </div>
+        <button class="btn-primary" id="btnDownloadZip" type="button">Download ZIP</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<footer>
+  <span>Threshold It Not — dithering ranked by a model trained on manual bracket-elimination picks, not a fixed formula.</span>
+  <span><a href="#" id="aboutLink">How the ranking works</a></span>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<script type="module" src="./app.js"></script>
+
+</body>
+</html>
