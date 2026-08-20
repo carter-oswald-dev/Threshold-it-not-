@@ -311,12 +311,31 @@
   .control select {
     width: 100%;
     font-family: var(--font-mono);
-    font-size: 12.5px;
-    padding: 9px 10px;
+    font-size: 16px; /* iOS Safari auto-zooms on focus below 16px */
+    padding: 8px 10px;
     background: var(--paper-punch);
     border: 1px solid var(--ink);
     border-radius: 0;
     color: var(--ink);
+  }
+  @media (min-width: 481px) {
+    .control select { font-size: 12.5px; padding: 9px 10px; }
+  }
+  .control--locked .locked-value {
+    width: 100%;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    padding: 9px 10px;
+    background: var(--starved-line);
+    border: 1px solid var(--starved);
+    color: var(--ink-soft);
+    box-sizing: border-box;
+  }
+  .control--locked .locked-note {
+    display: block;
+    font-size: 10px;
+    color: var(--starved);
+    margin-top: 3px;
   }
 
   .run-row {
@@ -706,9 +725,9 @@
   </div>
 
   <div class="controls">
-    <div class="control">
-      <label for="paletteSelect">Palette</label>
-      <select id="paletteSelect"></select>
+    <div class="control control--locked">
+      <label>Palette</label>
+      <div class="locked-value">Black &amp; White <span class="locked-note">(model only trained on 1-bit B/W)</span></div>
     </div>
     <div class="control">
       <label for="modeSelect">Dithering mode</label>

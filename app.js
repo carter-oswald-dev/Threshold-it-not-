@@ -1,12 +1,16 @@
 import { renderVariant } from './dither-engine.js';
 import {
-  PRESET_PALETTES,
   buildVariants,
   resolvePaletteRgb,
   resolvePaletteName,
 } from './dither-variants.js';
 import { extractImageFeatures, extractCandidateFeatures } from './ai-features.js';
 import { loadModel, predictScores } from './ai-ranker-model.js';
+
+// The AI ranker was only ever trained on 1-bit black & white output, so the
+// palette is intentionally fixed rather than user-selectable — any other
+// palette would be scored by a model that has never seen it.
+const FIXED_PALETTE_KEY = 'blackwhite';
 
 // ---------------------------------------------------------------------------
 // DOM refs
@@ -21,7 +25,6 @@ const sourceFilename = $('sourceFilename');
 const sourceDims = $('sourceDims');
 const btnClear = $('btnClear');
 
-const paletteSelect = $('paletteSelect');
 const modeSelect = $('modeSelect');
 const serpentineSelect = $('serpentineSelect');
 
@@ -59,15 +62,6 @@ let sourceFile = null;     // File
 let rankerModel = null;    // tf.LayersModel or null
 let lastResults = [];      // sorted results from most recent run
 
-// ---------------------------------------------------------------------------
-// Palette dropdown
-// ---------------------------------------------------------------------------
-PRESET_PALETTES.forEach((p) => {
-  const opt = document.createElement('option');
-  opt.value = p.value;
-  opt.textContent = p.name;
-  paletteSelect.appendChild(opt);
-});
 
 // ---------------------------------------------------------------------------
 // Model load (inference only — see README for how to export your trained model)
@@ -181,7 +175,7 @@ btnRun.addEventListener('click', async () => {
     const variants = buildVariants(mode, serpentineOpt);
     specCandidates.textContent = `${variants.length} per image`;
 
-    const paletteKey = paletteSelect.value;
+    const paletteKey = FIXED_PALETTE_KEY;
     const paletteRgb = resolvePaletteRgb(paletteKey);
     const paletteName = resolvePaletteName(paletteKey);
     const paletteColorCount = paletteRgb ? paletteRgb.length : 8;
